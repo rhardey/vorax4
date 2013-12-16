@@ -170,7 +170,7 @@ begin
                                 sys_connect_by_path(column_name, '/') text
                            from (select row_number() over(partition by t1.index_name order by t2.column_position) piece,
                                         t1.index_name,
-                                        t1.index_type,
+                                        t1.index_type||decode(uniqueness, 'UNIQUE', ',UNIQUE', '') index_type,
                                         t2.column_name
                                    from all_indexes t1, all_ind_columns t2
                                   where t1.owner = t2.index_owner
@@ -190,7 +190,7 @@ begin
       dbms_output.put_line('-------------------');
     end if;
     dbms_output.put_line('   ' || rpad(l_item.index_name, 31) || ' ' ||
-                         rpad(l_item.index_type, 15) || ' Columns: ' ||
+                         rpad(l_item.index_type, 29) || ' Columns: ' ||
                          l_item.text);
     l_idx := l_idx + 1;
   end loop;
