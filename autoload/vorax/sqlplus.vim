@@ -154,10 +154,14 @@ function! s:PrepareCstr(cstr) abort "{{{
 endfunction "}}}
 
 function! vorax#sqlplus#MergeCstr(parts) "{{{
-    return a:parts["user"] . 
-          \ '/"' . a:parts["password"] . '"' .
-          \ (a:parts["db"] == "" ? "" : "@" . a:parts["db"]) . 
-          \ (a:parts["role"] == "" ? "" : " as " .a:parts["role"])
+  let pwd = a:parts["password"]
+  if !vorax#utils#IsEmpty(pwd)
+    let pwd = '"' . pwd . '"'
+  endif
+  return a:parts["user"] . 
+        \ '/' . pwd .
+        \ (a:parts["db"] == "" ? "" : "@" . a:parts["db"]) . 
+        \ (a:parts["role"] == "" ? "" : " as " .a:parts["role"])
 endfunction "}}}
 
 " }}}
@@ -181,6 +185,7 @@ function! vorax#sqlplus#Exec(command, ...) abort "{{{
     if exists('g:vorax_limit_rows')
       let command = s:LimitRows(command, g:vorax_limit_rows)
     endif
+    call VORAXDebug("vorax#sqlplus#Exec: full_heading=".g:vorax_output_full_heading)
     if g:vorax_output_full_heading
       let format_cols = s:FormatColumns(command)
       if has_key(hash, 'prep')
@@ -209,6 +214,8 @@ function! vorax#sqlplus#Exec(command, ...) abort "{{{
     call vorax#utils#SpitWarn("There\'s no SqlPlus process running. Did you connect first?")
   catch /^VRX-02/
     call vorax#sqlplus#WarnCrash()
+  catch /^VRX-03/
+    call vorax#utils#WarnBusy()
   endtry
 endfunction "}}}
 
@@ -254,8 +261,12 @@ function! vorax#sqlplus#Query(command, ...) abort "{{{
   if exists('a:1')
     let hash['message'] = a:1
   endif
-  let output = vorax#sqlplus#ExecImmediate(a:command, hash)
-  return vorax#ruby#ParseResultset(output)
+  try
+    let output = vorax#sqlplus#ExecImmediate(a:command, hash)
+    return vorax#ruby#ParseResultset(output)
+  catch /^VRX-03/
+    call vorax#utils#WarnBusy()
+  endtry
 endfunction "}}}
 
 function! vorax#sqlplus#DefinedVariable(...) abort "{{{
@@ -341,7 +352,6 @@ function! vorax#sqlplus#RunVoraxScript(name, ...) abort "{{{
   call VORAXDebug("vorax#sqlplus#RunVoraxScript name=" . a:name)
   let handler = vorax#sqlplus#PrepareVoraxScript(a:name, a:000)
   let output = vorax#sqlplus#ExecImmediate('@' . handler.script, handler.hash)
-  call VORAXDebug("vorax#sqlplus#RunVoraxScript output=" . output)
   return output
 endfunction "}}}
 
@@ -416,11 +426,14 @@ function! s:LimitRows(script, limit) "{{{
 endfunction "}}}
 
 function! s:FormatColumns(script) "{{{
+  call VORAXDebug("s:FormatColumns: a:script=".string(a:script))
   let stmts = vorax#ruby#SqlStatements(a:script, 1, 1)
+  call VORAXDebug("s:FormatColumns: stmts=".string(stmts))
   let column_format = ""
   let column_clear = ""
   for stmt in stmts
     let query = vorax#ruby#RemoveAllComments(stmt)
+    call VORAXDebug("s:FormatColumns: query=".string(query))
     if query =~ '\m\c^\_s*\(SELECT\|WITH\)'
       for column in s:ColumnsLayout(query)
         let column_format .= "column " . column[0] .
@@ -434,8 +447,10 @@ function! s:FormatColumns(script) "{{{
 endfunction "}}}
 
 function! s:ColumnsLayout(query) "{{{
+  call VORAXDebug("s:ColumnsLayout: a:query=".string(a:query))
   " get rid of the last terminator
   let query = substitute(a:query, '\m\_s*\(;\|\/\)\_s*$', '', 'g')
+  call VORAXDebug("s:ColumnsLayout: query=".string(query))
   " compose the statement init template
   let stmt_init = ""
   let index = 1
@@ -447,6 +462,7 @@ function! s:ColumnsLayout(query) "{{{
   endfor
   " get the format columns script
   let script_content = s:ColumnsLayoutScript()
+  call VORAXDebug("s:ColumnsLayout: script_content=".string(script_content))
   if !vorax#utils#IsEmpty(script_content)
     let prep = 'store set ' . s:properties['store_set'] . ' replace' . "\nset echo off"
     let post = "@" . s:properties['store_set']
@@ -470,6 +486,7 @@ function! s:ColumnsLayoutScript() "{{{
     let script_name = s:properties['sql_folder'] . 'columns_layout.sql' 
     if filereadable(script_name)
       let s:cl_script_content = join(readfile(script_name), "\n")
+      return copy(s:cl_script_content)
     endif
   endif
   return ""
