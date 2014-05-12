@@ -184,12 +184,14 @@ function! vorax#output#FetchAndSpit() abort " {{{
       redraw
     else
       let chunk = vorax#ruby#SqlplusReadOutput(s:read_chunk_size)
-      call vorax#output#Spit(chunk)
+      if chunk != ""
+        call vorax#output#Spit(chunk)
+      endif
       " visual feedback to the user please
       redraw
     endif
     let s:first_chunk = 0
-    call feedkeys("f\e")
+    call feedkeys("f\e", 'n')
   catch /^VRX-02/
     call vorax#sqlplus#WarnCrash()
     call vorax#output#SpitterStop()
