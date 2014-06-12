@@ -3,7 +3,7 @@
 " Description: An Oracle IDE for Geeks
 " License:     see LICENSE.txt
 
-let g:vorax_version = "4.3.30"
+let g:vorax_version = "4.3.32"
 
 if exists("g:loaded_vorax") || &cp
   finish
@@ -66,6 +66,8 @@ call s:initVariable('g:vorax_output_full_heading', 0)
 "   2 = pagezip
 "   3 = tablezip
 call s:initVariable('g:vorax_output_window_default_funnel', 0)
+call s:initVariable('g:vorax_output_show_open_txn', 0)
+call s:initVariable('g:vorax_output_txn_marker', 'TXN')
 call s:initVariable('g:vorax_debug', 0)
 call s:initVariable('g:vorax_throbber', ['|', '/', '-', '*', '\'])
 call s:initVariable('g:vorax_sqlplus_options', 
@@ -213,6 +215,9 @@ hi User2 term=standout cterm=standout ctermfg=4 gui=reverse guifg=#268bd2
 
 " throbber color
 hi User3 term=standout cterm=standout ctermfg=5 gui=reverse guifg=#d33682
+
+" transaction indicator
+hi User4 term=standout cterm=standout ctermfg=9 gui=reverse guifg=#cb4b16
 
 "}}}
 
