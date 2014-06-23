@@ -65,20 +65,38 @@ function! vorax#utils#AbsolutePosition(line, column) abort"{{{
   return current_position + a:column - 1
 endfunction"}}}
 
-function! vorax#utils#IsVoraxBuffer() abort"{{{
-  return (&ft == 'sql' || &ft == 'plsql')
-endfunction"}}}
+function! vorax#utils#IsVoraxBuffer() abort "{{{
+  let dialect = ''
+  if exists('b:sql_type_override')
+    let dialect = b:sql_type_override
+  elseif exists('g:sql_type_default')
+    let dialect = g:sql_type_default
+  endif
+  return (dialect == 'sqlvorax' || dialect == 'plsqlvorax')
+endfunction "}}}
+
+function! vorax#utils#IsOpenTxn() abort "{{{
+  let sp = vorax#sqlplus#Properties()
+  return (sp['transaction'] != '' ? 1 : 0)
+endfunction "}}}
 
 function! vorax#utils#Throbber() abort "{{{
-  if len(s:throbber['elements']) == 0
-    return ""
-  endif
-  if s:throbber['index'] < len(s:throbber['elements']) - 1
-    let s:throbber['index'] += 1
+ let props = vorax#sqlplus#Properties()
+  if vorax#ruby#SqlplusIsInitialized() &&
+        \ vorax#ruby#SqlplusIsAlive() &&
+        \ vorax#ruby#SqlplusBusy()
+    if len(s:throbber['elements']) == 0
+      return ""
+    endif
+    if s:throbber['index'] < len(s:throbber['elements']) - 1
+      let s:throbber['index'] += 1
+    else
+      let s:throbber['index'] = 0
+    end
+    return s:throbber['elements'][s:throbber['index']]
   else
-    let s:throbber['index'] = 0
-  end
-  return s:throbber['elements'][s:throbber['index']]
+    return ''
+  endif
 endfunction "}}}
 
 function! vorax#utils#SpitWarn(str)"{{{
