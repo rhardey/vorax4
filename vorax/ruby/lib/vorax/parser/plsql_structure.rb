@@ -32,12 +32,14 @@ module Vorax
 
       PLSQL_CONTAINER = /(?:\bpackage\b|\btype\b)/i unless defined?(PLSQL_CONTAINER)
       SUBPROG = /(?:\boverriding\b|\bconstructor\b|\bmember\b|\bmap\b|\bstatic\b|\border\b|\bfunction\b|\bprocedure\b)/i unless defined?(SUBPROG)
-      BEGIN_MARKER = /(?:\bbegin\b|\bcase\b)/i unless defined?(BEGIN_MARKER)
+      BEGIN_MARKER = /(?:\bbegin\b)/i unless defined?(BEGIN_MARKER)
       END_MARKER = /(?:\bend\b)/i unless defined?(END_MARKER)
       FOR_STMT = /(?:\bfor\b)/i unless defined?(FOR_STMT)
       LOOP_STMT = /(?:\bloop\b)/i unless defined?(LOOP_STMT)
       IF_STMT = /(?:\bif\b)/i unless defined?(IF_STMT)
+      CASE_STMT = /(?:\bcase\b)/i unless defined?(CASE_STMT)
       DECLARE_BLOCK = /(?:\bdeclare\b)/i unless defined?(DECLARE_BLOCK)
+      LANGUAGE = /(?:\blanguage\b)/i unless defined?(LANGUAGE)
 
       # @return [String] the PLSQL code on which the structure was computed
       attr_reader :code
@@ -108,11 +110,13 @@ module Vorax
         register_plsql_spec_spot()
         register_slash_terminator_spot()
         register_subprog_spot()
+        register_language_spot()
         register_declare_spot()
         register_begin_spot()
         register_for_spot()
         register_loop_spot()
         register_if_spot()
+        register_case_spot()
         register_end_spot()
       end
 
@@ -195,6 +199,38 @@ module Vorax
         end
       end
 
+      def register_language_spot
+        @walker.register_spot(LANGUAGE) do |scanner|
+          if @current_parent.content.instance_of?(SubprogRegion)
+            # check for the next word: it should be JAVA or C
+            text = scanner.rest
+            walker = PlsqlWalker.new(text)
+            head = nil
+            walker.register_spot(/(\bJAVA\b)|(\bC\b)/i) do |s|
+              head = text[0...s.pos-s.matched.length] 
+              s.terminate
+            end
+            walker.walk
+            if head
+              head = Parser::remove_all_comments(head)
+              if head.strip == ""
+                # it's java/c function
+                walker = PlsqlWalker.new(text)
+                head = nil
+                end_pos = scanner.pos
+                walker.register_spot(/;/) do |s|
+                  end_pos += s.pos
+                  s.terminate
+                end
+                walker.walk
+                @current_parent.content.end_pos = end_pos
+                assign_parent(@current_parent.parent)
+              end
+            end
+          end
+        end
+      end
+
       def register_declare_spot
         @walker.register_spot(DECLARE_BLOCK) do |scanner|
           region = DeclareRegion.new(self, :start_pos => scanner.pos - scanner.matched.length + 1)
@@ -256,6 +292,33 @@ module Vorax
         end
       end
 
+      def register_case_spot
+        @walker.register_spot(CASE_STMT) do |scanner|
+          # look behind
+          context = @code[(@current_parent.content.start_pos-1...scanner.pos - scanner.matched.length)]
+          tail_scanner = StringScanner.new(context)
+          tail = context
+          while !tail_scanner.eos?
+            if tail_scanner.scan_until(/;|\bbegin\b/i)
+              tail = tail_scanner.rest
+            else
+              tail_scanner.terminate
+            end
+          end
+          # remove comments from tail
+          tail = Parser::remove_all_comments(tail)
+          if tail.strip == ""
+            # standalone CASE statement
+            stmt = "#{scanner.matched}#{scanner.rest}"
+            region = CaseRegion.new(self, :start_pos => scanner.pos - scanner.matched.length + 1)
+            assign_parent(@current_parent << Tree::TreeNode.new(region.id, region))
+            @level += 1
+          else
+            # ignore... CASE as an expression
+          end
+        end
+      end
+
       def register_end_spot
         @walker.register_spot(END_MARKER) do |scanner|
           # we have an "end" match. first of all check if it's not part
@@ -270,7 +333,7 @@ module Vorax
               end_declare = scanner.pos - 1
               end_pos = end_declare + (probe_data[:pointer] - 1)
               if probe_data[:kind] == :end
-                @begin_level -= 1 if @begin_level > 0
+                @begin_level -= 1 if @begin_level > 0 and (!@current_parent.content.instance_of?(CaseRegion))
                 if @current_parent.content
                   @current_parent.content.end_pos = end_pos
                   @current_parent.content.declare_end_pos = end_declare - scanner.matched.length if on_composite?
