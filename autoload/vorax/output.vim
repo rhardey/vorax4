@@ -138,9 +138,26 @@ function! vorax#output#SpitterStart() abort " {{{
 endfunction " }}}
 
 function! vorax#output#PostSpit() abort "{{{
+  let splus_props = vorax#sqlplus#Properties()
   call vorax#sqlplus#UpdateSessionOwner()
   if g:vorax_output_show_open_txn
     call vorax#sqlplus#UpdateTransaction()
+  endif
+  if splus_props['connecting'] == 1
+    let splus_props['connecting'] = 0
+    " restore the old 'set echo' sqlplus setting. Unfortunatelly this
+    " overwrites the 'set echo' setting which might be setup in the
+    " login.sql file sqlplus is executing after connect. The fix is to rely
+    " on the settings made in g:vorax_sqlplus_options
+    call vorax#sqlplus#ExecImmediate(splus_props['old_echo'])
+    call s:PrintWelcomeBanner(splus_props)
+    " run AfterConnect hook
+    if exists('*VORAXAfterConnect')
+      " Execute hook, but only if connected
+      if !vorax#utils#IsEmpty(splus_props['db'])
+        call VORAXAfterConnect(splus_props['user'], splus_props['db'], splus_props['privilege'])
+      endif
+    endif
   endif
   " update dbexplorer
   call vorax#explorer#RefreshRoot()
@@ -323,7 +340,11 @@ function! vorax#output#AskUser() abort"{{{
         \ vorax#ruby#SqlplusIsAlive() &&
         \ vorax#ruby#SqlplusBusy()
     let prompt = getline('$')
-    let answer = input(prompt)
+    if prompt =~ g:vorax_secure_prompt
+      let answer = inputsecret(prompt)
+    else
+      let answer = input(prompt)
+    endif
     call vorax#output#Spit("\n")
     call vorax#ruby#SqlplusSendText(answer . "\n")
   endif
@@ -435,4 +456,17 @@ function! s:DiscardLastSqlprompt() abort " {{{
   endif
   normal! G"_dd
 endfunction " }}}
+
+function! s:PrintWelcomeBanner(properties) abort "{{{
+  if a:properties['user'] != ""
+    let banner = a:properties['db_banner'] .
+          \ "\n\n" .
+          \ "Logged in as: " . 
+          \ a:properties['user'] . 
+          \ '@' . 
+          \ a:properties['db'] .
+          \ (a:properties['privilege'] != '' ? " " . a:properties['privilege'] : "")
+    call vorax#output#Spit("\n\n" . banner . "\n")
+  endif
+endfunction "}}}
 
