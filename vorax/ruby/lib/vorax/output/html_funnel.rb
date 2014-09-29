@@ -24,7 +24,7 @@ module Vorax
       # @param text [String] a chunk of HTML text
       def write(text)
         if text && !text.empty?
-          @parser.write text
+          @parser.write [text].pack("M")
           if @parser.document.should_spit_text?
             @tail << text
             # just to be sure we don't have stale text after
@@ -43,7 +43,7 @@ module Vorax
         chunk = @parser.document.io.read
         @parser.document.io.truncate(0)
         @parser.document.io.seek(0)
-        return chunk
+        return chunk.unpack("M").first
       end
 
       private
